@@ -2,51 +2,44 @@ from __future__ import annotations
 
 """把 MiniGrid 封装成 MCP 工具服务器。"""
 
-from dataclasses import asdict
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from 游戏接口.minigrid接口 import MiniGridInterface, available_env_ids
+from 游戏接口.minigrid接口 import MiniGridInterface, available_env_ids, serialize_state
+from 游戏接口.共享会话 import SharedSessionBridge
 
 mcp = FastMCP(
     name="MiniGrid MCP",
     instructions="提供 MiniGrid 关卡列表、启动游戏、读取状态、执行动作、重置和关闭游戏的工具。",
 )
 
-# 这个服务器保持一个“当前游戏实例”，这样客户端可以多次 step 同一局。
+# 保留原来的“由 MCP 自己启动游戏”的能力。
 _current_game: MiniGridInterface | None = None
 _current_state: dict[str, Any] | None = None
-
-
-def _serialize_state(state: dict[str, Any] | None) -> dict[str, Any]:
-    """把内部状态转换成便于 MCP 返回的纯字典。"""
-    if state is None:
-        return {"has_game": False, "state": None}
-
-    return {
-        "has_game": True,
-        "state": {
-            "env_id": state["env_id"],
-            "mission": state["mission"],
-            "step_count": state["step_count"],
-            "agent_pos": list(state["agent_pos"]),
-            "agent_dir": state["agent_dir"],
-            "carrying": state["carrying"],
-            "width": state["width"],
-            "height": state["height"],
-            "action_names": state["action_names"],
-            "world": [[asdict(cell) for cell in row] for row in state["world"]],
-        },
-    }
+_bridge = SharedSessionBridge()
 
 
 
-def _require_game() -> MiniGridInterface:
-    """确保当前已经启动了一局游戏。"""
-    if _current_game is None:
-        raise RuntimeError("当前还没有启动游戏，请先调用 start_game。")
-    return _current_game
+def _remote_session_available() -> bool:
+    """判断是否存在一个手动启动且可接管的共享游戏会话。"""
+    return _bridge.has_live_state()
+
+
+
+def _read_remote_state() -> dict[str, Any]:
+    """读取手动游戏进程共享出来的状态。"""
+    return _bridge.read_state()
+
+
+
+def _require_game_mode() -> str:
+    """确定当前应该操作本地环境还是手动共享会话。"""
+    if _current_game is not None:
+        return "local"
+    if _remote_session_available():
+        return "remote"
+    raise RuntimeError("当前没有启动游戏。你可以先手动打开游戏窗口，或者调用 start_game。")
 
 
 @mcp.tool()
@@ -81,13 +74,15 @@ def start_game(
         fully_observable=fully_observable,
     )
     _current_state = _current_game.reset(seed=seed)
-    return _serialize_state(_current_state)
+    return serialize_state(_current_state)
 
 
 @mcp.tool()
 def get_state() -> dict[str, Any]:
-    """读取当前游戏状态。"""
-    return _serialize_state(_current_state)
+    """读取当前游戏状态。优先读手动启动的共享会话，其次读本地托管游戏。"""
+    if _remote_session_available():
+        return _read_remote_state()
+    return serialize_state(_current_state)
 
 
 @mcp.tool()
@@ -95,15 +90,18 @@ def step_game(action_name: str) -> dict[str, Any]:
     """执行一步动作，并返回新状态和奖励。"""
     global _current_state
 
-    game = _require_game()
-    state, reward, terminated, truncated, info = game.step(action_name)
+    mode = _require_game_mode()
+    if mode == "remote":
+        return _bridge.submit_request({"type": "step", "action_name": action_name})
+
+    state, reward, terminated, truncated, info = _current_game.step(action_name)
     _current_state = state
     return {
         "reward": reward,
         "terminated": terminated,
         "truncated": truncated,
         "info": info,
-        **_serialize_state(state),
+        **serialize_state(state),
     }
 
 
@@ -112,15 +110,22 @@ def reset_game(seed: int | None = None) -> dict[str, Any]:
     """重置当前游戏。"""
     global _current_state
 
-    game = _require_game()
-    _current_state = game.reset(seed=seed)
-    return _serialize_state(_current_state)
+    mode = _require_game_mode()
+    if mode == "remote":
+        return _bridge.submit_request({"type": "reset", "seed": seed})
+
+    _current_state = _current_game.reset(seed=seed)
+    return serialize_state(_current_state)
 
 
 @mcp.tool()
 def close_game() -> dict[str, Any]:
     """关闭当前游戏实例。"""
     global _current_game, _current_state
+
+    mode = _require_game_mode()
+    if mode == "remote":
+        return _bridge.submit_request({"type": "close"})
 
     if _current_game is not None:
         _current_game.close()

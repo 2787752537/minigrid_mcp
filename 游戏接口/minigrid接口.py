@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """MiniGrid 的本地代码控制接口。"""
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any
 
 import gymnasium as gym
@@ -43,6 +43,85 @@ def available_env_ids() -> list[str]:
     )
 
 
+
+def _world_cells_from_env(env: Any) -> list[list[CellInfo]]:
+    """把底层网格对象转成纯 Python 结构，方便序列化和推理。"""
+    unwrapped = env.unwrapped
+    cells: list[list[CellInfo]] = []
+    for y in range(unwrapped.height):
+        row: list[CellInfo] = []
+        for x in range(unwrapped.width):
+            obj = unwrapped.grid.get(x, y)
+            if obj is None:
+                row.append(CellInfo(x=x, y=y, type="empty", color=None, can_overlap=True))
+                continue
+            row.append(
+                CellInfo(
+                    x=x,
+                    y=y,
+                    type=obj.type,
+                    color=getattr(obj, "color", None),
+                    is_open=getattr(obj, "is_open", False),
+                    is_locked=getattr(obj, "is_locked", False),
+                    can_overlap=bool(obj.can_overlap()),
+                )
+            )
+        cells.append(row)
+    return cells
+
+
+
+def build_state_from_env(
+    env: Any,
+    env_id: str,
+    observation: dict[str, Any] | None = None,
+    info: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """把当前环境整理成统一状态字典。"""
+    observation = observation or {}
+    info = info or {}
+    unwrapped = env.unwrapped
+    carrying = None if unwrapped.carrying is None else unwrapped.carrying.type
+    mission = observation.get("mission") or getattr(unwrapped, "mission", "")
+    return {
+        "env_id": env_id,
+        "mission": mission,
+        "observation": observation,
+        "info": info,
+        "step_count": int(unwrapped.step_count),
+        "agent_pos": tuple(int(v) for v in unwrapped.agent_pos),
+        "agent_dir": int(unwrapped.agent_dir),
+        "carrying": carrying,
+        "width": int(unwrapped.width),
+        "height": int(unwrapped.height),
+        "world": _world_cells_from_env(env),
+        "action_names": list(ACTION_NAME_TO_ENUM.keys()),
+    }
+
+
+
+def serialize_state(state: dict[str, Any] | None) -> dict[str, Any]:
+    """把内部状态转换成便于 MCP 和跨进程传输的纯字典。"""
+    if state is None:
+        return {"has_game": False, "state": None}
+
+    return {
+        "has_game": True,
+        "state": {
+            "env_id": state["env_id"],
+            "mission": state["mission"],
+            "step_count": state["step_count"],
+            "agent_pos": list(state["agent_pos"]),
+            "agent_dir": state["agent_dir"],
+            "carrying": state["carrying"],
+            "width": state["width"],
+            "height": state["height"],
+            "action_names": state["action_names"],
+            "world": [[asdict(cell) for cell in row] for row in state["world"]],
+        },
+    }
+
+
 class MiniGridInterface:
     """通过代码控制官方 MiniGrid 环境的最小接口。"""
 
@@ -81,7 +160,7 @@ class MiniGridInterface:
         if seed is not None:
             self.seed = seed
         observation, info = self.env.reset(seed=self.seed)
-        self.last_state = self._build_state(observation, info)
+        self.last_state = build_state_from_env(self.env, self.env_id, observation, info)
         return self.last_state
 
     def step(
@@ -94,7 +173,7 @@ class MiniGridInterface:
         observation, reward, terminated, truncated, info = self.env.step(
             ACTION_NAME_TO_ENUM[action_name]
         )
-        state = self._build_state(observation, info)
+        state = build_state_from_env(self.env, self.env_id, observation, info)
         self.last_state = state
         return state, float(reward), bool(terminated), bool(truncated), info
 
@@ -109,50 +188,3 @@ class MiniGridInterface:
     def action_names(self) -> list[str]:
         """返回当前接口允许发送的动作名。"""
         return list(ACTION_NAME_TO_ENUM.keys())
-
-    def _build_state(self, observation: dict[str, Any], info: dict[str, Any]) -> dict[str, Any]:
-        """把官方 observation 整理成更适合 agent 使用的状态字典。"""
-        unwrapped = self.env.unwrapped
-        world = self._world_cells()
-        carrying = None if unwrapped.carrying is None else unwrapped.carrying.type
-        return {
-            "env_id": self.env_id,
-            "mission": observation.get("mission", ""),
-            "observation": observation,
-            "info": info,
-            "step_count": int(unwrapped.step_count),
-            "agent_pos": tuple(int(v) for v in unwrapped.agent_pos),
-            "agent_dir": int(unwrapped.agent_dir),
-            "carrying": carrying,
-            "width": int(unwrapped.width),
-            "height": int(unwrapped.height),
-            "world": world,
-            "action_names": self.action_names(),
-        }
-
-    def _world_cells(self) -> list[list[CellInfo]]:
-        """把底层网格对象转成纯 Python 结构，方便序列化和推理。"""
-        unwrapped = self.env.unwrapped
-        cells: list[list[CellInfo]] = []
-        for y in range(unwrapped.height):
-            row: list[CellInfo] = []
-            for x in range(unwrapped.width):
-                obj = unwrapped.grid.get(x, y)
-                if obj is None:
-                    row.append(
-                        CellInfo(x=x, y=y, type="empty", color=None, can_overlap=True)
-                    )
-                    continue
-                row.append(
-                    CellInfo(
-                        x=x,
-                        y=y,
-                        type=obj.type,
-                        color=getattr(obj, "color", None),
-                        is_open=getattr(obj, "is_open", False),
-                        is_locked=getattr(obj, "is_locked", False),
-                        can_overlap=bool(obj.can_overlap()),
-                    )
-                )
-            cells.append(row)
-        return cells

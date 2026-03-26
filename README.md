@@ -28,6 +28,12 @@ python -m pip install "git+https://github.com/<你的用户名>/<仓库名>.git"
 python 游戏本体\play_minigrid.py
 ```
 
+现在手动游玩入口会默认开启一个本地共享会话：
+
+- 你可以自己用键盘操作
+- 也可以在游戏运行中途让 MCP 接管几步
+- 两边可以交替操作，不需要重新开局
+
 ## 游戏操作按键
 
 官方 `manual_control` 的默认按键如下：
@@ -56,6 +62,13 @@ python minigrid_mcp_server.py
 minigrid-mcp
 ```
 
+### 新的配合方式
+
+1. 你先手动启动游戏窗口
+2. 再启动 MCP server
+3. 之后 MCP 可以随时通过 `get_state` / `step_game` 接入当前这局
+4. 你也可以继续手动按键，两边可以交替操作
+
 ### 在 Codex 里注册 MCP
 
 推荐方式一：
@@ -80,6 +93,11 @@ codex mcp add minigrid -- python D:\你的项目路径\minigrid_agent\minigrid_m
 - `step_game`
 - `reset_game`
 - `close_game`
+
+说明：
+
+- 如果你已经手动开了一局，`get_state / step_game / reset_game / close_game` 会优先接管这局手动游戏
+- 如果没有手动游戏，仍然可以继续使用原来的 `start_game` 让 MCP 自己开一局
 
 更详细的安装说明见：
 
