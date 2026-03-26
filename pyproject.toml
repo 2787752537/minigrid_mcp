@@ -3,11 +3,16 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "minigrid-play-only"
+name = "minigrid-agent"
 version = "0.1.0"
-description = "Minimal launcher for the official graphical MiniGrid game."
+description = "MiniGrid manual play app and MCP server."
 requires-python = ">=3.10"
 dependencies = [
+  "gymnasium>=1.2.3",
+  "mcp[cli]>=1.26.0",
   "minigrid>=3.0.0",
   "pygame>=2.6.0",
 ]
+
+[project.scripts]
+minigrid-mcp = "minigrid_mcp_server:main"
