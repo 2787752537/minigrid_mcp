@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "minigrid-play-only"
+version = "0.1.0"
+description = "Minimal launcher for the official graphical MiniGrid game."
+requires-python = ">=3.10"
+dependencies = [
+  "minigrid>=3.0.0",
+  "pygame>=2.6.0",
+]
