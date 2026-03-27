@@ -1,42 +1,72 @@
 # MiniGrid Agent
 
-这个仓库现在只保留两部分核心内容：
+一个用于练习 MiniGrid 和 MCP 接管的小项目。
 
-- `游戏本体/`：官方 MiniGrid 的图形化手动游玩入口
-- `游戏接口/` + `minigrid_mcp_server.py`：供 Codex / MCP 调用的游戏控制服务
+这个仓库现在只做两件事：
+
+- 提供一个可以直接手动游玩的 MiniGrid 图形化入口
+- 提供一个 MCP server，让 Codex / agent 可以在你游玩中途接入同一局游戏
+
+特点很简单：**你可以自己玩，也可以随时让 MCP 接手几步。**
 
 ## 安装
 
-建议先创建一个 Python 3.10+ 虚拟环境，然后在项目根目录安装依赖：
+在项目根目录执行：
 
 ```powershell
 python -m pip install -U pip
 python -m pip install -e .
 ```
 
-如果你已经把项目传到 GitHub，也可以直接从仓库安装：
+如果你已经把仓库传到 GitHub，也可以直接安装：
 
 ```powershell
 python -m pip install "git+https://github.com/<你的用户名>/<仓库名>.git"
 ```
 
-## 手动玩游戏
+安装完成后，可以直接启动 MCP：
 
-运行：
+```powershell
+minigrid-mcp
+```
+
+## 快速开始
+
+### 1. 打开手动游戏
 
 ```powershell
 python 游戏本体\play_minigrid.py
 ```
 
-现在手动游玩入口会默认开启一个本地共享会话：
+### 2. 启动 MCP server
 
-- 你可以自己用键盘操作
-- 也可以在游戏运行中途让 MCP 接管几步
-- 两边可以交替操作，不需要重新开局
+```powershell
+python minigrid_mcp_server.py
+```
 
-## 游戏操作按键
+或者：
 
-官方 `manual_control` 的默认按键如下：
+```powershell
+minigrid-mcp
+```
+
+### 3. 在 Codex 里注册 MCP
+
+```powershell
+codex mcp add minigrid -- minigrid-mcp
+```
+
+如果你更想直接指定脚本路径：
+
+```powershell
+codex mcp add minigrid -- python D:\你的项目路径\minigrid_agent\minigrid_mcp_server.py
+```
+
+注册完成后，完全退出 Codex App，再重新打开项目。
+
+## 手动游玩
+
+操作按键：
 
 - `↑`：前进
 - `←`：左转
@@ -48,44 +78,15 @@ python 游戏本体\play_minigrid.py
 - `Backspace`：重开当前局
 - `Esc`：退出
 
-## MCP 服务
+当前手动模式会：
 
-这个项目提供了一个可直接启动的 MCP 入口：
+- 自动开启一个本地共享会话
+- 成功时打印并弹窗提示 `通关了`
+- 超时结束时打印并弹窗提示 `本局结束`
 
-```powershell
-python minigrid_mcp_server.py
-```
+## MCP 工具
 
-如果你已经用 `pip install -e .` 安装过，也可以直接这样启动：
-
-```powershell
-minigrid-mcp
-```
-
-### 新的配合方式
-
-1. 你先手动启动游戏窗口
-2. 再启动 MCP server
-3. 之后 MCP 可以随时通过 `get_state` / `step_game` 接入当前这局
-4. 你也可以继续手动按键，两边可以交替操作
-
-### 在 Codex 里注册 MCP
-
-推荐方式一：
-
-```powershell
-codex mcp add minigrid -- minigrid-mcp
-```
-
-推荐方式二：
-
-```powershell
-codex mcp add minigrid -- python D:\你的项目路径\minigrid_agent\minigrid_mcp_server.py
-```
-
-注册完成后，完全退出 Codex App，再重新打开项目。
-
-### MCP 工具
+这个项目提供这些 MCP 工具：
 
 - `list_levels`
 - `start_game`
@@ -94,11 +95,19 @@ codex mcp add minigrid -- python D:\你的项目路径\minigrid_agent\minigrid_m
 - `reset_game`
 - `close_game`
 
-说明：
+行为逻辑：
 
 - 如果你已经手动开了一局，`get_state / step_game / reset_game / close_game` 会优先接管这局手动游戏
-- 如果没有手动游戏，仍然可以继续使用原来的 `start_game` 让 MCP 自己开一局
+- 如果当前没有手动游戏，仍然可以用 `start_game` 让 MCP 自己开一局
+- 你和 MCP 可以交替操作同一局，不需要重新开局
 
-更详细的安装说明见：
+## 目录
+
+- `游戏本体/`：手动游玩入口
+- `游戏接口/`：状态读取、动作执行、共享会话逻辑
+- `minigrid_mcp_server.py`：MCP 启动入口
+- `MCP安装说明.md`：更详细的 MCP 安装说明
+
+## 文档
 
 - [MCP安装说明.md](./MCP安装说明.md)
